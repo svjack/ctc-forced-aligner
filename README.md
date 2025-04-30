@@ -1,3 +1,82 @@
+```python
+### git clone https://huggingface.co/datasets/svjack/genshin_impact_ganyu_audio_sample
+
+import pandas as pd
+df = pd.read_csv("genshin_impact_ganyu_audio_sample/metadata.csv")
+
+import re
+def split_chinese_text(text):
+    # 正则说明：
+    # - [\u4e00-\u9fff]：匹配基本中文字符
+    # - [\u3000-\u303F]：匹配中文标点符号（如？、。！）
+    # - [\uFF00-\uFFEF]：匹配全角符号（如“”「」）
+    # - + 表示匹配1个或多个连续字符
+    pattern = re.compile(r'([\u4e00-\u9fff]+)')
+    matches = pattern.findall(text)
+    # 过滤空匹配项并返回
+    return [match for match in matches if match.strip()]
+    
+df["prompt"] = df["prompt"].map(split_chinese_text)
+df = df.explode("prompt").dropna().drop_duplicates()
+df
+
+import os
+import subprocess
+from tqdm import tqdm
+import pandas as pd
+import glob
+import time
+from uuid import uuid1
+
+# 基础路径
+audio_base_path = "genshin_impact_ganyu_audio_sample_cp"
+output_cp_path = "genshin_impact_ganyu_audio_sample_cp"
+output_sp_path = "genshin_impact_ganyu_audio_sample_sp"
+
+# 确保输出路径存在
+os.makedirs(output_cp_path, exist_ok=True)
+os.makedirs(output_sp_path, exist_ok=True)
+
+# 去重处理，只保留每个 file_name 的唯一行
+unique_files = df[['file_name', 'prompt']].drop_duplicates()
+
+# 使用 tqdm 遍历每一行
+for idx, row in tqdm(unique_files.iterrows(), total=len(unique_files), desc="Processing files"):
+    file_name = row['file_name']
+    prompt = row['prompt']
+
+    # 构建完整路径
+    audio_path = os.path.join(audio_base_path, file_name)
+    text_file_name = os.path.splitext(file_name)[0] + ".txt"
+    text_path = os.path.join(output_cp_path, text_file_name)
+
+    # 1. 写入文本文件
+    with open(text_path, 'w', encoding='utf-8') as f:
+        f.write(prompt)
+
+    # 2. 执行 ctc-forced-aligner 命令
+    cmd = [
+        "ctc-forced-aligner",
+        "--audio_path", audio_path,
+        "--text_path", text_path,
+        "--language", "zh",
+        "--romanize"
+    ]
+    subprocess.run(cmd, check=True)
+
+    # 3. 等待生成 .json 文件（可能需要一点时间）
+    time.sleep(1)
+
+    # 4. 找到 output_cp_path 中最新的 .json 文件
+    json_files = glob.glob(os.path.join(output_cp_path, "*.json"))
+    latest_json = max(json_files, key=os.path.getctime) if json_files else None
+
+    if latest_json:
+        # 5. 复制到 output_sp_path
+        dest_json_path = os.path.join(output_sp_path, os.path.basename(latest_json).replace(".json", "_{}.json".format(uuid1())))
+        os.replace(latest_json, dest_json_path)
+```
+
 <h1 align="center">Forced Alignment with Hugging Face CTC Models</h1>
 
 [![FreePalestine.Dev](https://freepalestine.dev/header/1)](https://freepalestine.dev)
