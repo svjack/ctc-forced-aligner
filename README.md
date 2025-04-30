@@ -75,6 +75,72 @@ for idx, row in tqdm(unique_files.iterrows(), total=len(unique_files), desc="Pro
         # 5. 复制到 output_sp_path
         dest_json_path = os.path.join(output_sp_path, os.path.basename(latest_json).replace(".json", "_{}.json".format(uuid1())))
         os.replace(latest_json, dest_json_path)
+
+import pathlib
+import pandas as pd
+import numpy as np 
+import os
+df = pd.DataFrame(
+pd.Series(list(pathlib.Path("genshin_impact_ganyu_audio_sample_sp/").rglob("*.json"))).map(str).map(
+    lambda x: (
+        os.path.join("genshin_impact_ganyu_audio_sample/" ,"_".join(x.split("/")[-1].split("_")[:2]) + ".wav") ,
+        pd.read_json(x)["segments"].iloc[0])
+).values.tolist())
+df.columns = ["audio", "segment"]
+df["start"] = df["segment"].map(lambda x: x["start"])
+df["end"] = df["segment"].map(lambda x: x["end"])
+df["text"] = df["segment"].map(lambda x: x["text"])
+df = df[["audio", "start", "end", "text"]]
+df
+
+import os
+import uuid
+from tqdm import tqdm
+from pydub import AudioSegment
+
+def process_audio_slices(df, output_dir="genshin_impact_ganyu_audio_sample_align_splited"):
+    """
+    Process the dataframe to slice audio files and save segments with text files.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe with audio paths, start/end times, and text
+        output_dir (str): Output directory for sliced files
+    """
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Process each row in the dataframe
+    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing audio slices"):
+        audio_path = row['audio']
+        start_sec = row['start']
+        end_sec = row['end']
+        text = row['text']
+        
+        try:
+            # Generate unique filename
+            unique_id = str(uuid.uuid4())
+            audio_output_path = os.path.join(output_dir, f"{unique_id}.wav")
+            text_output_path = os.path.join(output_dir, f"{unique_id}.txt")
+            
+            # Slice the audio
+            audio = AudioSegment.from_file(audio_path)
+            start_ms = start_sec * 1000
+            end_ms = end_sec * 1000
+            sliced_audio = audio[start_ms:end_ms]
+            
+            # Save audio file
+            sliced_audio.export(audio_output_path, format="wav")
+            
+            # Save text file
+            with open(text_output_path, 'w', encoding='utf-8') as f:
+                f.write(text)
+                
+        except Exception as e:
+            tqdm.write(f"Error processing row {idx}: {str(e)}")
+            continue
+
+# Example usage:
+process_audio_slices(df)
 ```
 
 <h1 align="center">Forced Alignment with Hugging Face CTC Models</h1>
